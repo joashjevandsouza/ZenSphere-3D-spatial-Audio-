@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZenSphere - 3D Spatial Audio Mixer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --accent-color: #06b6d4;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+    
+    .slider::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-color);
+    }
+    
+    .slider-small::-webkit-slider-thumb {
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-color);
+    }
+
+    .slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 10px var(--accent-color);
+    }
+
+    .slider-small::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent-color);
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 8px var(--accent-color);
+    }
+
+    @keyframes ping {
+      75%, 100% {
+        transform: scale(2);
+        opacity: 0;
+      }
+    }
+
+    .animate-ping {
+      animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+
+    @keyframes ripple {
+      0% {
+        transform: scale(1);
+        opacity: 0.5;
+      }
+      50% {
+        transform: scale(1.5);
+        opacity: 0;
+      }
+      100% {
+        transform: scale(1);
+        opacity: 0.5;
+      }
+    }
+
+    .ripple {
+      animation: ripple 2s ease-in-out infinite;
+    }
+
+    .draggable {
+      cursor: grab;
+      user-select: none;
+    }
+
+    .draggable:active {
+      cursor: grabbing;
+    }
+
+    .sound-icon {
+      transition: transform 0.2s;
+    }
+
+    .sound-icon:hover {
+      transform: scale(1.1);
+    }
+
+    .sound-icon:active {
+      transform: scale(0.95);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, createContext, useContext, useMemo } = React;
+
+    // Complete Icon Library
+    const Icons = {
+      CloudRain: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M20 16.2A4.5 4.5 0 0 0 17.5 8h-1.8A7 7 0 1 0 4 14.9"/>
+          <path d="M16 14v6M8 14v6M12 16v6"/>
+        </svg>
+      ),
+      Wind: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.73-8.27A2.5 2.5 0 1 1 19.5 12H2"/>
+        </svg>
+      ),
+      Bird: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M16 7h.01M3.4 18H12a8 8 0 0 0 8-8V7a4 4 0 0 0-7.28-2.3L2 20"/>
+        </svg>
+      ),
+      Waves: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+          <path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+          <path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/>
+        </svg>
+      ),
+      Trees: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M10 10v.2A3 3 0 0 1 8.9 16H5a3 3 0 0 1-1-5.8V10a3 3 0 0 1 6 0Z"/>
+          <path d="M7 16v6"/>
+          <path d="M13 19v3"/>
+          <path d="M12 19h8.3a1 1 0 0 0 .7-1.7L18 14h.3a1 1 0 0 0 .7-1.7L16 9h.2a1 1 0 0 0 .8-1.7L13 3l-1.4 1.5"/>
+        </svg>
+      ),
+      Flame: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+        </svg>
+      ),
+      Music: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M9 18V5l12-2v13"/>
+          <circle cx="6" cy="18" r="3"/>
+          <circle cx="18" cy="16" r="3"/>
+        </svg>
+      ),
+      Mic: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+      ),
+      Guitar: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="m20 7 1.7-1.7a1 1 0 0 0 0-1.4l-1.6-1.6a1 1 0 0 0-1.4 0L17 4v3Z"/>
+          <path d="m17 7-5.1 5.1"/>
+          <circle cx="11.5" cy="12.5" r=".5"/>
+          <path d="M6 12a2 2 0 0 0 1.8-1.2l.4-.9C8.7 8.8 9.8 8 11 8c2.8 0 5 2.2 5 5 0 1.2-.8 2.3-1.9 2.8l-.9.4A2 2 0 0 0 12 18a4 4 0 0 1-4 4c-3.3 0-6-2.7-6-6a4 4 0 0 1 4-4"/>
+        </svg>
+      ),
+      Sparkles: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+        </svg>
+      ),
+      Play: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+      ),
+      Pause: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <rect x="6" y="4" width="4" height="16"/>
+          <rect x="14" y="4" width="4" height="16"/>
+        </svg>
+      ),
+      Volume2: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+          <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        </svg>
+      ),
+      Upload: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      ),
+      Save: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+        </svg>
+      ),
+      RotateCcw: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+        </svg>
+      ),
+      Sliders: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <line x1="4" y1="21" x2="4" y2="14"/>
+          <line x1="4" y1="10" x2="4" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="12"/>
+          <line x1="12" y1="8" x2="12" y2="3"/>
+          <line x1="20" y1="21" x2="20" y2="16"/>
+          <line x1="20" y1="12" x2="20" y2="3"/>
+        </svg>
+      ),
+      HelpCircle: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+          <circle cx="12" cy="17" r=".1"/>
+        </svg>
+      ),
+      X: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <line x1="18" y1="6" x2="6" y2="18"/>
+          <line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      ),
+      Palette: ({ size = 24, color = "currentColor" }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2">
+          <circle cx="13.5" cy="6.5" r=".5"/>
+          <circle cx="17.5" cy="10.5" r=".5"/>
+          <circle cx="8.5" cy="7.5" r=".5"/>
+          <circle cx="6.5" cy="12.5" r=".5"/>
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+        </svg>
+      )
+    };
+
+    // Professional Lofi Chain with safer defaults
+    class LofiChain {
+      constructor() {
+        // Stage 1: Low-Pass Filter (gentler settings)
+        this.lowPass = new Tone.Filter({
+          type: 'lowpass',
+          frequency: 3000, // Increased from 2200Hz for less aggressive filtering
+          rolloff: -12 // Reduced from -24 for gentler slope
+        });
+        
+        // Stage 2: BitCrusher (less aggressive)
+        this.bitCrusher = new Tone.BitCrusher({
+          bits: 6 // Increased from 4 for less distortion
+        });
+        
+        // Stage 3: Vibrato (tape wow/flutter)
+        this.vibrato = new Tone.Vibrato({
+          frequency: 0.5,
+          depth: 0.1 // Reduced from 0.15 for subtler effect
+        });
+        
+        // Stage 4: Light saturation
+        this.saturation = new Tone.Distortion({
+          distortion: 0.2, // Very light saturation
+          wet: 0.5
+        });
+        
+        // Chain the effects
+        this.lowPass.chain(this.bitCrusher, this.vibrato, this.saturation);
+        
+        this.input = this.lowPass;
+        this.output = this.saturation;
+      }
+      
+      connect(destination) {
+        this.output.connect(destination);
+        return this;
+      }
+      
+      dispose() {
+        this.lowPass.dispose();
+        this.bitCrusher.dispose();
+        this.vibrato.dispose();
+        this.saturation.dispose();
+      }
+    }
+
+    // Professional Audio Engine with FIXED Lofi routing
+    class SpatialAudioEngine {
+      constructor() {
+        this.limiter = new Tone.Limiter(-1).toDestination();
+        this.masterVolume = new Tone.Volume(0).connect(this.limiter);
+        this.eq3 = new Tone.EQ3({ low: 0, mid: 0, high: 0 });
+        
+        // CRITICAL FIX: Create separate gain nodes for dry/wet mixing
+        this.dryGain = new Tone.Gain(1); // Start at full dry
+        this.wetGain = new Tone.Gain(0); // Start at zero wet
+        
+        // Create lofi chain
+        this.lofiChain = new LofiChain();
+        
+        // CORRECT ROUTING:
+        // eq3 splits to both paths simultaneously
+        this.eq3.fan(this.dryGain, this.lofiChain.input);
+        
+        // Lofi output goes to wet gain
+        this.lofiChain.connect(this.wetGain);
+        
+        // Both dry and wet go to master
+        this.dryGain.connect(this.masterVolume);
+        this.wetGain.connect(this.masterVolume);
+        
+        // Set listener orientation
+        if (Tone.context.listener && Tone.context.listener.forwardX) {
+          Tone.context.listener.forwardX.value = 0;
+          Tone.context.listener.forwardY.value = 0;
+          Tone.context.listener.forwardZ.value = -1;
+          Tone.context.listener.upX.value = 0;
+          Tone.context.listener.upY.value = 1;
+          Tone.context.listener.upZ.value = 0;
+        }
+        
+        this.soundChannels = new Map();
+        this.isStarted = false;
+        this.isLofiMode = false;
+        
+        console.log('Audio Engine initialized - Lofi chain ready');
+      }
+
+      async start() {
+        if (!this.isStarted) {
+          await Tone.start();
+          console.log('Tone.js started');
+          this.isStarted = true;
+        }
+      }
+
+      createChannel(id, audioBuffer) {
+        const player = new Tone.Player(audioBuffer).sync().start(0);
+        player.loop = true;
+        
+        const panner = new Tone.Panner3D({
+          panningModel: 'HRTF',
+          distanceModel: 'exponential',
+          refDistance: 1,
+          rolloffFactor: 2,
+          maxDistance: 1000
+        });
+        
+        const volume = new Tone.Volume(0); // Start at 0dB instead of -6dB
+        
+        player.connect(volume);
+        volume.connect(panner);
+        panner.connect(this.eq3); // Connect to EQ which splits to dry/wet
+        
+        this.soundChannels.set(id, { player, panner, volume });
+        
+        console.log(`Channel ${id} created and connected to ${this.isLofiMode ? 'LOFI' : 'CLEAN'} path`);
+        
+        return { player, panner, volume };
+      }
+
+      updatePosition(id, x, y, boundaryRadius) {
+        const channel = this.soundChannels.get(id);
+        if (!channel) return;
+        const normalizedX = (x / boundaryRadius) * 5;
+        const normalizedY = (y / boundaryRadius) * 5;
+        channel.panner.positionX.rampTo(normalizedX, 0.05);
+        channel.panner.positionY.rampTo(normalizedY, 0.05);
+        channel.panner.positionZ.rampTo(0, 0.05);
+      }
+
+      setChannelVolume(id, db) {
+        const channel = this.soundChannels.get(id);
+        if (channel) channel.volume.volume.rampTo(db, 0.1);
+      }
+
+      setMasterVolume(db) {
+        this.masterVolume.volume.rampTo(db, 0.1);
+      }
+
+      setEQ(band, db) {
+        this.eq3[band].value = db;
+      }
+
+      toggleLofiMode(enabled) {
+        this.isLofiMode = enabled;
+        const rampTime = 0.3;
+        
+        console.log(`Lofi mode ${enabled ? 'ENABLED' : 'DISABLED'}`);
+        console.log(`Dry gain: ${enabled ? 1 : 1} -> ${enabled ? 0 : 1}`);
+        console.log(`Wet gain: ${enabled ? 0 : 1} -> ${enabled ? 1 : 0}`);
+        
+        if (enabled) {
+          // Crossfade to wet (lofi) signal
+          this.dryGain.gain.rampTo(0, rampTime);
+          this.wetGain.gain.rampTo(1, rampTime);
+        } else {
+          // Crossfade to dry (clean) signal
+          this.dryGain.gain.rampTo(1, rampTime);
+          this.wetGain.gain.rampTo(0, rampTime);
+        }
+      }
+
+      removeChannel(id) {
+        const channel = this.soundChannels.get(id);
+        if (channel) {
+          channel.volume.volume.rampTo(-Infinity, 0.1);
+          setTimeout(() => {
+            channel.player.stop();
+            channel.player.dispose();
+            channel.panner.dispose();
+            channel.volume.dispose();
+          }, 150);
+          this.soundChannels.delete(id);
+        }
+      }
+
+      stopAll() { 
+        Tone.Transport.stop(); 
+        console.log('Transport stopped');
+      }
+      
+      startAll() { 
+        Tone.Transport.start(); 
+        console.log('Transport started');
+      }
+      
+      dispose() {
+        this.soundChannels.forEach((_, id) => this.removeChannel(id));
+        this.eq3.dispose();
+        this.masterVolume.dispose();
+        this.limiter.dispose();
+        this.dryGain.dispose();
+        this.wetGain.dispose();
+        this.lofiChain.dispose();
+      }
+    }
+
+    // Context
+    const AudioContext = createContext();
+    const useAudio = () => useContext(AudioContext);
+
+    // Audio Provider
+    const AudioProvider = ({ children }) => {
+      const audioEngine = useMemo(() => new SpatialAudioEngine(), []);
+      const [isPlaying, setIsPlaying] = useState(false);
+      const [sounds, setSounds] = useState([]);
+      const [masterVol, setMasterVol] = useState(0);
+      const [eq, setEq] = useState({ low: 0, mid: 0, high: 0 });
+      const [isLofi, setIsLofi] = useState(false);
+      const [bgColor, setBgColor] = useState('#111827');
+      const [auraMode, setAuraMode] = useState(false);
+      const [accentColor, setAccentColor] = useState('#06b6d4'); // Cyan default
+
+      // Calculate complementary accent color based on background
+      useEffect(() => {
+        if (auraMode) {
+          setAccentColor('#a78bfa'); // Purple for aura mode
+          return;
+        }
+
+        // Convert hex to HSL to calculate complementary color
+        const hexToHSL = (hex) => {
+          const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+          if (!result) return { h: 200, s: 70, l: 50 };
+          
+          let r = parseInt(result[1], 16) / 255;
+          let g = parseInt(result[2], 16) / 255;
+          let b = parseInt(result[3], 16) / 255;
+          
+          const max = Math.max(r, g, b), min = Math.min(r, g, b);
+          let h, s, l = (max + min) / 2;
+          
+          if (max === min) {
+            h = s = 0;
+          } else {
+            const d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            switch (max) {
+              case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+              case g: h = ((b - r) / d + 2) / 6; break;
+              case b: h = ((r - g) / d + 4) / 6; break;
+            }
+          }
+          
+          return { h: h * 360, s: s * 100, l: l * 100 };
+        };
+
+        const hsl = hexToHSL(bgColor);
+        
+        // Calculate complementary color (opposite on color wheel + high saturation)
+        const complementaryHue = (hsl.h + 180) % 360;
+        const newAccent = `hsl(${complementaryHue}, 70%, 60%)`;
+        setAccentColor(newAccent);
+      }, [bgColor, auraMode]);
+
+      useEffect(() => () => audioEngine.dispose(), [audioEngine]);
+
+      const addSound = async (file, icon, color) => {
+        await audioEngine.start();
+        const arrayBuffer = await file.arrayBuffer();
+        const audioBuffer = await Tone.context.decodeAudioData(arrayBuffer);
+        const id = Date.now() + Math.random();
+        const newSound = { id, name: file.name, icon, color, x: 0, y: 0, volume: -3 }; // Start at -3dB for better audibility
+        audioEngine.createChannel(id, audioBuffer);
+        setSounds(prev => [...prev, newSound]);
+        return id;
+      };
+
+      const updateSoundPosition = (id, x, y, boundaryRadius) => {
+        audioEngine.updatePosition(id, x, y, boundaryRadius);
+        setSounds(prev => prev.map(s => s.id === id ? { ...s, x, y } : s));
+      };
+
+      const updateSoundVolume = (id, db) => {
+        audioEngine.setChannelVolume(id, db);
+        setSounds(prev => prev.map(s => s.id === id ? { ...s, volume: db } : s));
+      };
+
+      const removeSound = (id) => {
+        audioEngine.removeChannel(id);
+        setSounds(prev => prev.filter(s => s.id !== id));
+      };
+
+      const togglePlayback = async () => {
+        await audioEngine.start();
+        isPlaying ? audioEngine.stopAll() : audioEngine.startAll();
+        setIsPlaying(!isPlaying);
+      };
+
+      const updateMasterVolume = (db) => {
+        audioEngine.setMasterVolume(db);
+        setMasterVol(db);
+      };
+
+      const updateEQ = (band, db) => {
+        audioEngine.setEQ(band, db);
+        setEq(prev => ({ ...prev, [band]: db }));
+      };
+
+      const toggleLofi = () => {
+        const newLofi = !isLofi;
+        audioEngine.toggleLofiMode(newLofi);
+        setIsLofi(newLofi);
+      };
+
+      const savePreset = (name = null) => {
+        // Get existing presets
+        const existingPresets = JSON.parse(localStorage.getItem('zensphere-presets') || '[]');
+        
+        if (!name) {
+          // Generate default name
+          name = `Mix ${existingPresets.length + 1}`;
+        }
+        
+        const preset = {
+          id: Date.now(),
+          name: name,
+          timestamp: new Date().toLocaleString(),
+          sounds: sounds.map(s => ({ name: s.name, x: s.x, y: s.y, volume: s.volume })),
+          masterVol,
+          eq,
+          isLofi,
+          bgColor,
+          auraMode
+        };
+        
+        existingPresets.push(preset);
+        localStorage.setItem('zensphere-presets', JSON.stringify(existingPresets));
+        
+        return preset.id;
+      };
+
+      const loadPreset = (presetId) => {
+        const presets = JSON.parse(localStorage.getItem('zensphere-presets') || '[]');
+        const preset = presets.find(p => p.id === presetId);
+        
+        if (!preset) {
+          alert('Preset not found!');
+          return;
+        }
+        
+        // Apply settings
+        setMasterVol(preset.masterVol || 0);
+        setEq(preset.eq || { low: 0, mid: 0, high: 0 });
+        setIsLofi(preset.isLofi || false);
+        setBgColor(preset.bgColor || '#111827');
+        setAuraMode(preset.auraMode || false);
+        
+        // Apply to audio engine
+        audioEngine.setMasterVolume(preset.masterVol || 0);
+        audioEngine.setEQ('low', (preset.eq || {}).low || 0);
+        audioEngine.setEQ('mid', (preset.eq || {}).mid || 0);
+        audioEngine.setEQ('high', (preset.eq || {}).high || 0);
+        audioEngine.toggleLofiMode(preset.isLofi || false);
+        
+        alert(`Preset "${preset.name}" loaded! Please re-upload your audio files.`);
+      };
+
+      const deletePreset = (presetId) => {
+        const presets = JSON.parse(localStorage.getItem('zensphere-presets') || '[]');
+        const filtered = presets.filter(p => p.id !== presetId);
+        localStorage.setItem('zensphere-presets', JSON.stringify(filtered));
+      };
+
+      const getPresets = () => {
+        return JSON.parse(localStorage.getItem('zensphere-presets') || '[]');
+      };
+
+      const reset = () => {
+        sounds.forEach(s => audioEngine.removeChannel(s.id));
+        setSounds([]);
+        setMasterVol(0);
+        setEq({ low: 0, mid: 0, high: 0 });
+        setIsLofi(false);
+        setBgColor('#111827');
+        setAuraMode(false);
+        if (isPlaying) {
+          audioEngine.stopAll();
+          setIsPlaying(false);
+        }
+      };
+
+      return (
+        <AudioContext.Provider value={{ 
+          sounds, isPlaying, masterVol, eq, isLofi, bgColor, auraMode, accentColor,
+          addSound, updateSoundPosition, updateSoundVolume, removeSound, 
+          togglePlayback, updateMasterVolume, updateEQ, toggleLofi, 
+          setBgColor, setAuraMode, savePreset, loadPreset, deletePreset, getPresets, reset 
+        }}>
+          {children}
+        </AudioContext.Provider>
+      );
+    };
+
+    // Sound Icon
+    const SoundIcon = ({ sound, boundaryRadius, onPositionChange }) => {
+      const [isDragging, setIsDragging] = useState(false);
+      const [position, setPosition] = useState({ x: sound.x, y: sound.y });
+
+      useEffect(() => {
+        if (!isDragging) return;
+
+        const handleMouseMove = (e) => {
+          const stage = document.querySelector('.sound-stage');
+          if (!stage) return;
+          const rect = stage.getBoundingClientRect();
+          const centerX = rect.width / 2;
+          const centerY = rect.height / 2;
+          let x = e.clientX - rect.left - centerX;
+          let y = e.clientY - rect.top - centerY;
+          const distance = Math.sqrt(x * x + y * y);
+          if (distance > boundaryRadius) {
+            const angle = Math.atan2(y, x);
+            x = Math.cos(angle) * boundaryRadius;
+            y = Math.sin(angle) * boundaryRadius;
+          }
+          setPosition({ x, y });
+          onPositionChange(sound.id, x, y, boundaryRadius);
+        };
+
+        const handleMouseUp = () => setIsDragging(false);
+
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+          document.removeEventListener('mousemove', handleMouseMove);
+          document.removeEventListener('mouseup', handleMouseUp);
+        };
+      }, [isDragging, sound.id, boundaryRadius, onPositionChange]);
+
+      const IconComponent = sound.icon;
+
+      return (
+        <div
+          className="draggable sound-icon absolute"
+          style={{ left: '50%', top: '50%', transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))` }}
+          onMouseDown={() => setIsDragging(true)}
+        >
+          <div className="relative w-12 h-12 rounded-full flex items-center justify-center shadow-lg backdrop-blur-sm" style={{ backgroundColor: `${sound.color}40`, border: `2px solid ${sound.color}`, boxShadow: `0 0 20px ${sound.color}60` }}>
+            <IconComponent size={24} color={sound.color} />
+            <div className="ripple absolute inset-0 rounded-full" style={{ border: `2px solid ${sound.color}` }} />
+          </div>
+        </div>
+      );
+    };
+
+    // Sound Stage
+    const SoundStage = () => {
+      const { sounds, updateSoundPosition, accentColor } = useAudio();
+      const stageRef = useRef(null);
+      const [boundaryRadius, setBoundaryRadius] = useState(200);
+
+      useEffect(() => {
+        if (stageRef.current) {
+          const width = stageRef.current.offsetWidth;
+          const height = stageRef.current.offsetHeight;
+          const radius = Math.min(width, height) / 2 - 40;
+          setBoundaryRadius(radius);
+        }
+      }, []);
+
+      return (
+        <div ref={stageRef} className="sound-stage relative w-full h-full flex items-center justify-center">
+          <div 
+            className="relative rounded-full border-4 transition-all duration-500" 
+            style={{ 
+              width: boundaryRadius * 2, 
+              height: boundaryRadius * 2, 
+              borderColor: `${accentColor}50`,
+              background: `radial-gradient(circle, ${accentColor}08 0%, transparent 70%)`,
+              boxShadow: `0 0 60px ${accentColor}40`
+            }}
+          >
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+              <div 
+                className="w-6 h-6 rounded-full transition-all duration-500" 
+                style={{
+                  backgroundColor: accentColor,
+                  boxShadow: `0 0 20px ${accentColor}cc`
+                }}
+              >
+                <div 
+                  className="absolute inset-0 rounded-full animate-ping opacity-75"
+                  style={{ backgroundColor: accentColor }}
+                />
+              </div>
+              <div 
+                className="absolute top-8 left-1/2 transform -translate-x-1/2 text-xs whitespace-nowrap transition-colors duration-500"
+                style={{ color: accentColor }}
+              >
+                You
+              </div>
+            </div>
+            {sounds.map(sound => <SoundIcon key={sound.id} sound={sound} boundaryRadius={boundaryRadius} onPositionChange={updateSoundPosition} />)}
+          </div>
+        </div>
+      );
+    };
+
+    // File Uploader
+    const FileUploader = () => {
+      const { sounds, addSound } = useAudio();
+      const fileInputRef = useRef(null);
+      const [selectedIcon, setSelectedIcon] = useState(null);
+
+      const availableSlots = [
+        { icon: Icons.CloudRain, color: '#06b6d4', label: 'Rain' },
+        { icon: Icons.Wind, color: '#8b5cf6', label: 'Wind' },
+        { icon: Icons.Bird, color: '#f59e0b', label: 'Bird' },
+        { icon: Icons.Waves, color: '#3b82f6', label: 'Waves' },
+        { icon: Icons.Trees, color: '#10b981', label: 'Forest' },
+        { icon: Icons.Flame, color: '#ef4444', label: 'Fire' },
+        { icon: Icons.Music, color: '#ec4899', label: 'Music' },
+        { icon: Icons.Mic, color: '#a855f7', label: 'Vocals' },
+        { icon: Icons.Guitar, color: '#f97316', label: 'Guitar' },
+        { icon: Icons.Sparkles, color: '#a78bfa', label: 'Ambient' }
+      ];
+
+      const handleFileSelect = async (e) => {
+        const file = e.target.files[0];
+        if (file && selectedIcon) {
+          await addSound(file, selectedIcon.icon, selectedIcon.color);
+          setSelectedIcon(null);
+        }
+      };
+
+      return (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2 justify-center max-h-[240px] overflow-y-auto">
+            {availableSlots.slice(0, 10 - sounds.length).map((slot, idx) => (
+              <button key={idx} onClick={() => { setSelectedIcon(slot); fileInputRef.current?.click(); }} className="w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-1 backdrop-blur-sm border-2 border-dashed transition-all hover:scale-105" style={{ backgroundColor: `${slot.color}20`, borderColor: `${slot.color}60` }} title={slot.label}>
+                <slot.icon size={20} color={slot.color} />
+                <Icons.Upload size={10} color="#9ca3af" />
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 text-center">{sounds.length}/10 slots used</p>
+          <input ref={fileInputRef} type="file" accept="audio/*" onChange={handleFileSelect} className="hidden" />
+        </div>
+      );
+    };
+
+    // Color Picker with Color Wheel
+    const ColorPicker = () => {
+      const { bgColor, setBgColor, auraMode, setAuraMode } = useAudio();
+      const [showColorWheel, setShowColorWheel] = useState(false);
+      const [customColor, setCustomColor] = useState(bgColor);
+
+      const presetColors = [
+        { name: 'Deep Space', color: '#111827' },
+        { name: 'Midnight Blue', color: '#1e1b4b' },
+        { name: 'Purple Haze', color: '#3b0764' },
+        { name: 'Forest Night', color: '#14532d' },
+        { name: 'Ocean Deep', color: '#0c4a6e' },
+        { name: 'Sunset Red', color: '#7f1d1d' },
+        { name: 'Charcoal', color: '#18181b' },
+        { name: 'Deep Teal', color: '#134e4a' }
+      ];
+
+      const handleCustomColor = (color) => {
+        setCustomColor(color);
+        setBgColor(color);
+        setAuraMode(false);
+      };
+
+      return (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Icons.Palette size={18} color="#06b6d4" />
+              <span className="text-sm font-medium">Background</span>
+            </div>
+            <button
+              onClick={() => setAuraMode(!auraMode)}
+              className={`text-xs px-3 py-1.5 rounded-full transition-all ${
+                auraMode 
+                  ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg shadow-purple-500/50 animate-pulse' 
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              {auraMode ? '✨ Aura ON' : '✨ Aura OFF'}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {presetColors.map((preset) => (
+              <button
+                key={preset.color}
+                onClick={() => {
+                  setBgColor(preset.color);
+                  setAuraMode(false);
+                  setCustomColor(preset.color);
+                }}
+                className={`w-9 h-9 rounded-full transition-all hover:scale-110 ${
+                  bgColor === preset.color && !auraMode 
+                    ? 'ring-2 ring-cyan-400 ring-offset-2 ring-offset-gray-800 scale-110' 
+                    : ''
+                }`}
+                style={{ backgroundColor: preset.color }}
+                title={preset.name}
+              />
+            ))}
+          </div>
+
+          {/* Color Wheel Toggle */}
+          <button
+            onClick={() => setShowColorWheel(!showColorWheel)}
+            className="w-full py-2 px-4 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center gap-2 text-sm transition-all"
+          >
+            <Icons.Palette size={16} />
+            <span>{showColorWheel ? 'Hide' : 'Show'} Color Wheel</span>
+          </button>
+
+          {/* Color Wheel Section */}
+          {showColorWheel && (
+            <div className="p-4 bg-gray-800/50 rounded-lg space-y-3 border border-gray-700">
+              <div className="space-y-2">
+                <label className="text-xs text-gray-400">Pick Custom Color</label>
+                <div className="flex gap-2">
+                  <input
+                    type="color"
+                    value={customColor}
+                    onChange={(e) => handleCustomColor(e.target.value)}
+                    className="w-16 h-10 rounded cursor-pointer bg-transparent border-2 border-gray-600"
+                    style={{ colorScheme: 'dark' }}
+                  />
+                  <input
+                    type="text"
+                    value={customColor}
+                    onChange={(e) => {
+                      const color = e.target.value;
+                      if (/^#[0-9A-F]{6}$/i.test(color)) {
+                        handleCustomColor(color);
+                      }
+                      setCustomColor(color);
+                    }}
+                    placeholder="#111827"
+                    className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white font-mono"
+                  />
+                </div>
+              </div>
+
+              {/* Quick Dark Colors */}
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Quick Dark Shades</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {['#0a0a0a', '#1a1a2e', '#16213e', '#0f3460', '#533483', '#2d4a3e', '#4a1a1a', '#1f1f1f'].map(color => (
+                    <button
+                      key={color}
+                      onClick={() => handleCustomColor(color)}
+                      className="w-7 h-7 rounded border border-gray-600 hover:scale-110 transition-all"
+                      style={{ backgroundColor: color }}
+                      title={color}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleCustomColor(customColor)}
+                className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 rounded text-sm font-medium transition-all"
+              >
+                Apply Color
+              </button>
+            </div>
+          )}
+
+          {auraMode && (
+            <div className="p-2 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+              <p className="text-xs text-purple-300 text-center">
+                🌈 Breathing rainbow effect active
+              </p>
+            </div>
+          )}
+
+          {!auraMode && !showColorWheel && (
+            <p className="text-xs text-gray-500 text-center">
+              Click a color or use color wheel for custom colors
+            </p>
+          )}
+        </div>
+      );
+    };
+
+    // Help Modal
+    const HelpModal = ({ isOpen, onClose }) => {
+      if (!isOpen) return null;
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
+          <div className="bg-gray-800/95 backdrop-blur-xl rounded-2xl p-8 max-w-lg w-full border border-cyan-500/30 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">How to Use ZenSphere</h2>
+              <button onClick={onClose} className="text-gray-400 hover:text-white">
+                <Icons.X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-gray-300">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0">
+                  <Icons.Upload size={16} color="#06b6d4" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white mb-1">Upload Audio</h3>
+                  <p className="text-sm">Click any icon slot to upload an audio file. Supports MP3, WAV, OGG, and more. Up to 10 sounds!</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center flex-shrink-0">
+                  <span className="text-xl">🎯</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white mb-1">Position in 3D Space</h3>
+                  <p className="text-sm">Drag icons around the circle. Center = louder & centered. Edges = quieter & panned left/right.</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-pink-500/20 flex items-center justify-center flex-shrink-0">
+                  <Icons.Sliders size={16} color="#ec4899" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white mb-1">Fine-Tune Controls</h3>
+                  <p className="text-sm">Adjust volumes, 3-band EQ, and toggle Lofi Mode for vintage warmth with tape wobble.</p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                  <Icons.Palette size={16} color="#10b981" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white mb-1">Customize & Save</h3>
+                  <p className="text-sm">Change background colors, enable Aura Mode for breathing effects, and save presets!</p>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-cyan-500/10 rounded-lg border border-cyan-500/30">
+                <p className="text-sm text-cyan-300">
+                  <strong>Pro Tip:</strong> Use headphones for the best 3D spatial audio experience!
+                </p>
+              </div>
+            </div>
+
+            <button onClick={onClose} className="mt-6 w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg font-semibold hover:scale-105 transition-all">
+              Got it!
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    // Preset Manager Component
+    const PresetManager = () => {
+      const { savePreset, loadPreset, deletePreset, getPresets, reset } = useAudio();
+      const [presets, setPresets] = useState([]);
+      const [showManager, setShowManager] = useState(false);
+      const [newPresetName, setNewPresetName] = useState('');
+      const [showNameInput, setShowNameInput] = useState(false);
+
+      useEffect(() => {
+        refreshPresets();
+      }, []);
+
+      const refreshPresets = () => {
+        setPresets(getPresets());
+      };
+
+      const handleSave = () => {
+        const name = newPresetName.trim() || `Mix ${presets.length + 1}`;
+        savePreset(name);
+        setNewPresetName('');
+        setShowNameInput(false);
+        refreshPresets();
+        alert(`Preset "${name}" saved!`);
+      };
+
+      const handleDelete = (id, name) => {
+        if (confirm(`Delete preset "${name}"?`)) {
+          deletePreset(id);
+          refreshPresets();
+        }
+      };
+
+      return (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowNameInput(!showNameInput)}
+              className="flex-1 py-2 px-4 rounded-lg bg-green-600 hover:bg-green-500 flex items-center justify-center gap-2 text-sm transition-all"
+            >
+              <Icons.Save size={16} />
+              Save New
+            </button>
+            <button
+              onClick={() => setShowManager(!showManager)}
+              className="flex-1 py-2 px-4 rounded-lg bg-blue-600 hover:bg-blue-500 flex items-center justify-center gap-2 text-sm transition-all"
+            >
+              <Icons.Upload size={16} />
+              Load ({presets.length})
+            </button>
+            <button
+              onClick={reset}
+              className="flex-1 py-2 px-4 rounded-lg bg-red-600 hover:bg-red-500 flex items-center justify-center gap-2 text-sm transition-all"
+            >
+              <Icons.RotateCcw size={16} />
+              Reset
+            </button>
+          </div>
+
+          {/* Save Name Input */}
+          {showNameInput && (
+            <div className="p-3 bg-gray-800/50 rounded-lg space-y-2 border border-green-500/30">
+              <input
+                type="text"
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+                placeholder="Enter preset name..."
+                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded text-sm text-white"
+                onKeyPress={(e) => e.key === 'Enter' && handleSave()}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSave}
+                  className="flex-1 py-1.5 bg-green-600 hover:bg-green-500 rounded text-sm"
+                >
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setShowNameInput(false);
+                    setNewPresetName('');
+                  }}
+                  className="flex-1 py-1.5 bg-gray-600 hover:bg-gray-500 rounded text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Preset List */}
+          {showManager && (
+            <div className="p-3 bg-gray-800/50 rounded-lg space-y-2 border border-blue-500/30 max-h-[200px] overflow-y-auto">
+              <h3 className="text-xs font-semibold text-gray-300 mb-2">Saved Presets</h3>
+              {presets.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-2">No presets saved yet</p>
+              ) : (
+                presets.map(preset => (
+                  <div key={preset.id} className="flex items-center justify-between p-2 bg-gray-700/50 rounded">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{preset.name}</p>
+                      <p className="text-xs text-gray-400">{preset.timestamp}</p>
+                    </div>
+                    <div className="flex gap-1 ml-2">
+                      <button
+                        onClick={() => {
+                          loadPreset(preset.id);
+                          setShowManager(false);
+                        }}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs"
+                      >
+                        Load
+                      </button>
+                      <button
+                        onClick={() => handleDelete(preset.id, preset.name)}
+                        className="px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-xs"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    // Control Panel
+    const ControlPanel = () => {
+      const { sounds, isPlaying, masterVol, eq, isLofi, accentColor, updateSoundVolume, removeSound, togglePlayback, updateMasterVolume, updateEQ, toggleLofi } = useAudio();
+      const [showEQ, setShowEQ] = useState(false);
+
+      return (
+        <div className="space-y-6">
+          <div className="flex items-center justify-center gap-4">
+            <button 
+              onClick={togglePlayback} 
+              className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95"
+              style={{
+                background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`,
+                boxShadow: `0 0 20px ${accentColor}60`
+              }}
+            >
+              {isPlaying ? <Icons.Pause size={28} /> : <Icons.Play size={28} style={{marginLeft: '4px'}} />}
+            </button>
+            <button onClick={toggleLofi} className={`px-6 py-3 rounded-xl font-semibold transition-all hover:scale-105 active:scale-95 ${isLofi ? 'bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg animate-pulse' : 'bg-gray-700 hover:bg-gray-600'}`}>
+              ✨ Lofi {isLofi ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          <div className="p-4 bg-gray-800/50 rounded-lg">
+            <ColorPicker />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Icons.Volume2 size={20} style={{ color: accentColor }} />
+                <span className="text-sm font-medium">Master</span>
+              </div>
+              <span className="text-xs text-gray-400">{masterVol.toFixed(1)} dB</span>
+            </div>
+            <input type="range" min="-40" max="0" step="0.5" value={masterVol} onChange={(e) => updateMasterVolume(parseFloat(e.target.value))} className="w-full h-2 bg-gray-700 rounded-lg cursor-pointer slider" />
+          </div>
+
+          <button onClick={() => setShowEQ(!showEQ)} className="w-full py-2 px-4 rounded-lg bg-gray-700 hover:bg-gray-600 flex items-center justify-center gap-2">
+            <Icons.Sliders size={18} />
+            <span className="text-sm">3-Band EQ</span>
+          </button>
+
+          {showEQ && (
+            <div className="space-y-3 p-4 bg-gray-800/50 rounded-lg">
+              {['low', 'mid', 'high'].map(band => (
+                <div key={band} className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium uppercase">{band}</span>
+                    <span className="text-xs text-gray-400">{eq[band].toFixed(1)} dB</span>
+                  </div>
+                  <input type="range" min="-12" max="12" step="0.5" value={eq[band]} onChange={(e) => updateEQ(band, parseFloat(e.target.value))} className="w-full h-1.5 bg-gray-700 rounded-lg cursor-pointer slider-small" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {sounds.length > 0 && (
+            <div className="space-y-3 max-h-[240px] overflow-y-auto">
+              <h3 className="text-sm font-semibold text-gray-300">Sound Channels</h3>
+              {sounds.map(sound => {
+                const IconComponent = sound.icon;
+                return (
+                  <div key={sound.id} className="p-3 bg-gray-800/50 rounded-lg space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <IconComponent size={18} color={sound.color} />
+                        <span className="text-xs truncate max-w-[100px]">{sound.name}</span>
+                      </div>
+                      <button onClick={() => removeSound(sound.id)} className="text-xs text-red-400 hover:text-red-300">×</button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="range" min="-40" max="0" step="0.5" value={sound.volume} onChange={(e) => updateSoundVolume(sound.id, parseFloat(e.target.value))} className="flex-1 h-1.5 bg-gray-700 rounded-lg cursor-pointer slider-small" />
+                      <span className="text-xs text-gray-400 w-11">{sound.volume.toFixed(1)}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <PresetManager />
+        </div>
+      );
+    };
+
+    // Main App Container
+    const AppContainer = () => {
+      const [showHelp, setShowHelp] = useState(false);
+      const { bgColor, auraMode, accentColor } = useAudio();
+      const [auraHue, setAuraHue] = useState(200);
+
+      // Update CSS variable for slider colors
+      useEffect(() => {
+        document.documentElement.style.setProperty('--accent-color', accentColor);
+      }, [accentColor]);
+
+      useEffect(() => {
+        if (!auraMode) return;
+
+        // Reset hue when Aura mode is activated
+        setAuraHue(200);
+
+        let animationId;
+        let lastTime = 0;
+        const speed = 0.5; // Increased speed for more visible changes
+
+        const animate = (currentTime) => {
+          if (lastTime === 0) lastTime = currentTime;
+          const deltaTime = currentTime - lastTime;
+          
+          if (deltaTime >= 50) { // Update every 50ms for smoother animation
+            setAuraHue((prev) => (prev + speed) % 360);
+            lastTime = currentTime;
+          }
+          
+          animationId = requestAnimationFrame(animate);
+        };
+
+        animationId = requestAnimationFrame(animate);
+        return () => {
+          if (animationId) cancelAnimationFrame(animationId);
+        };
+      }, [auraMode]);
+
+      const backgroundStyle = auraMode
+        ? { background: `linear-gradient(135deg, hsl(${auraHue}, 50%, 8%), hsl(${(auraHue + 60) % 360}, 40%, 12%))` }
+        : { 
+            background: `linear-gradient(135deg, ${bgColor}, ${bgColor}dd, ${bgColor}88)`,
+            transition: 'background 0.5s ease'
+          };
+
+      return (
+        <div className="min-h-screen text-white p-4 md:p-8 transition-all duration-1000" style={backgroundStyle}>
+          <div className="max-w-7xl mx-auto">
+            <button
+              onClick={() => setShowHelp(true)}
+              className="fixed top-4 right-4 z-40 w-12 h-12 rounded-full backdrop-blur-sm border-2 flex items-center justify-center hover:scale-110 transition-all shadow-lg"
+              style={{
+                backgroundColor: `${accentColor}20`,
+                borderColor: `${accentColor}80`,
+                boxShadow: `0 0 20px ${accentColor}40`
+              }}
+              title="Help"
+            >
+              <Icons.HelpCircle size={24} style={{ color: accentColor }} />
+            </button>
+
+            <div className="text-center mb-8">
+              <h1 
+                className="text-5xl font-bold mb-2 transition-all duration-500"
+                style={{
+                  background: `linear-gradient(135deg, ${accentColor}, ${accentColor}cc)`,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text'
+                }}
+              >
+                ZenSphere
+              </h1>
+              <p className="text-gray-400 text-sm">3D Spatial Audio Mixer for Relaxation</p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 bg-gray-800/30 backdrop-blur-xl rounded-2xl p-8 border border-gray-700/50 shadow-2xl" style={{ minHeight: '600px' }}>
+                <SoundStage />
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-gray-800/30 backdrop-blur-xl rounded-2xl p-6 border border-gray-700/50">
+                  <h2 className="text-lg font-semibold mb-4 text-center">Add Sounds</h2>
+                  <FileUploader />
+                </div>
+
+                <div className="bg-gray-800/30 backdrop-blur-xl rounded-2xl p-6 border border-gray-700/50">
+                  <h2 className="text-lg font-semibold mb-4">Controls</h2>
+                  <ControlPanel />
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 text-center text-sm text-gray-500">
+              <p>Drag sound icons • Position them in 3D space • Closer = louder • Further = quieter</p>
+              <p className="mt-1 text-xs" style={{ color: `${accentColor}aa` }}>
+                Professional Lofi: Low-Pass → BitCrusher → Tape Wobble → Saturation
+              </p>
+            </div>
+          </div>
+
+          <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+        </div>
+      );
+    };
+
+    // Root App
+    function App() {
+      return (
+        <AudioProvider>
+          <AppContainer />
+        </AudioProvider>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
